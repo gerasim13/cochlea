@@ -8,7 +8,8 @@ const WINDOW_MS: f64 = 50.0;
 /// Hop between windows, milliseconds.
 const HOP_MS: f64 = 10.0;
 
-pub(crate) fn analyze(mono: &[f32], sample_rate: u32, floor_dbfs: f64) -> SilenceReport {
+/// Measure leading and trailing silence from mono PCM.
+pub fn analyze(mono: &[f32], sample_rate: u32, floor_dbfs: f64) -> SilenceReport {
     let total = mono.len();
     let duration_ms = if sample_rate == 0 {
         0.0

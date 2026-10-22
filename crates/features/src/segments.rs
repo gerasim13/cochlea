@@ -46,6 +46,20 @@ impl Default for SegmentOpts {
 }
 
 impl SegmentOpts {
+    fn window_len(self, sample_rate: u32) -> Option<usize> {
+        validate_window_ms(self.window_ms).ok()?;
+        (sample_rate > 0)
+            .then(|| ((self.window_ms / 1000.0 * f64::from(sample_rate)).round() as usize).max(1))
+    }
+
+    fn floor_dbfs(self) -> f64 {
+        if self.silence_floor_dbfs.is_finite() {
+            self.silence_floor_dbfs
+        } else {
+            DEFAULT_SILENCE_FLOOR_DBFS
+        }
+    }
+
     /// Override the window length, milliseconds.
     #[must_use]
     pub fn with_window_ms(mut self, window_ms: f64) -> Self {
@@ -171,25 +185,15 @@ pub fn segment_timeline(audio: &Audio, opts: &SegmentOpts) -> SegmentTimeline {
     let mono = audio.mono();
     let sample_rate = audio.sample_rate;
 
-    // A NaN floor would make every `<=` comparison false and silently
-    // disable silence detection; fall back to the documented default and
-    // report the floor actually used (the timeline serializes it).
-    let floor_dbfs = if opts.silence_floor_dbfs.is_finite() {
-        opts.silence_floor_dbfs
-    } else {
-        DEFAULT_SILENCE_FLOOR_DBFS
-    };
-
-    if mono.is_empty() || sample_rate == 0 || !opts.window_ms.is_finite() || opts.window_ms < 1.0 {
+    let floor_dbfs = opts.floor_dbfs();
+    let Some(window_len) = opts.window_len(sample_rate).filter(|_| !mono.is_empty()) else {
         return SegmentTimeline {
             schema_version: SEGMENTS_SCHEMA_VERSION,
             window_ms: opts.window_ms,
             silence_floor_dbfs: floor_dbfs,
             segments: Vec::new(),
         };
-    }
-
-    let window_len = ((opts.window_ms / 1000.0 * f64::from(sample_rate)).round() as usize).max(1);
+    };
     let segment_count = mono.len().div_ceil(window_len);
 
     // One onsets-grade STFT serves both the onset detector and band-energy
@@ -247,13 +251,7 @@ pub fn segment_timeline(audio: &Audio, opts: &SegmentOpts) -> SegmentTimeline {
         let start_ms = start as f64 / f64::from(sample_rate) * 1000.0;
         let end_ms = end as f64 / f64::from(sample_rate) * 1000.0;
 
-        let mean_sq = slice
-            .iter()
-            .map(|&x| f64::from(x) * f64::from(x))
-            .sum::<f64>()
-            / slice.len() as f64;
-        let rms = mean_sq.sqrt();
-        let rms_dbfs = (rms > 0.0).then(|| 20.0 * libm::log10(rms));
+        let rms_dbfs = rms_dbfs(slice);
 
         let peak = slice
             .iter()
@@ -314,6 +312,29 @@ pub fn segment_timeline(audio: &Audio, opts: &SegmentOpts) -> SegmentTimeline {
         silence_floor_dbfs: floor_dbfs,
         segments,
     }
+}
+
+/// Count the silent windows of [`segment_timeline`] without its other features.
+/// Invalid window lengths and zero sample rates produce zero windows.
+pub fn count_silent_segments(audio: &Audio, opts: &SegmentOpts) -> usize {
+    let Some(window_len) = opts.window_len(audio.sample_rate) else {
+        return 0;
+    };
+    let mono = audio.mono();
+    let floor_dbfs = opts.floor_dbfs();
+    mono.chunks(window_len)
+        .filter(|slice| rms_dbfs(slice).unwrap_or(f64::NEG_INFINITY) <= floor_dbfs)
+        .count()
+}
+
+fn rms_dbfs(slice: &[f32]) -> Option<f64> {
+    let mean_sq = slice
+        .iter()
+        .map(|&x| f64::from(x) * f64::from(x))
+        .sum::<f64>()
+        / slice.len() as f64;
+    let rms = mean_sq.sqrt();
+    (rms > 0.0).then(|| 20.0 * libm::log10(rms))
 }
 
 /// Map a time in milliseconds to a segment index, clamped into

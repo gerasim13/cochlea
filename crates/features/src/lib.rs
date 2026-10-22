@@ -34,6 +34,7 @@ mod util;
 
 pub use audio::{Audio, AudioError};
 pub use centroid::{CentroidPoint, spectral_centroid_curve};
+pub use clipping::analyze as analyze_clipping;
 pub use compare::{
     Analysis, COMPARE_SCHEMA_VERSION, CompareReport, KeyDelta, KeySummary, LoudnessDelta,
     OnsetMatch, PitchDelta, RhythmDelta, SegmentDelta, StereoDelta, StructureDelta, TempoDelta,
@@ -43,6 +44,7 @@ pub use digest::digest_text;
 pub use harmony::{
     ChordQuality, ChordSpan, HarmonyOpts, HarmonyReport, SectionKey, analyze_harmony,
 };
+pub use loudness::analyze as analyze_loudness;
 pub use loudness::{
     LoudnessPoint, LoudnessTimeline, LoudnessTimelineOpts, loudness_range, loudness_timeline,
 };
@@ -53,9 +55,10 @@ pub use report::{
 };
 pub use rhythm::{GridKind, RhythmReport, analyze_rhythm};
 pub use segments::{
-    BandEnergy, SEGMENTS_SCHEMA_VERSION, Segment, SegmentOpts, SegmentTimeline, segment_timeline,
-    validate_window_ms,
+    BandEnergy, SEGMENTS_SCHEMA_VERSION, Segment, SegmentOpts, SegmentTimeline,
+    count_silent_segments, segment_timeline, validate_window_ms,
 };
+pub use silence::analyze as analyze_silence;
 pub use stereo::{StereoReport, analyze_stereo};
 pub use structure::{StructureOpts, StructureReport, detect_structure};
 pub use tempo::{DEFAULT_BEATS_PER_BAR, TempoCandidate, TempoOpts, TempoReport, estimate_tempo};
@@ -157,6 +160,13 @@ pub fn probe(audio: &Audio, opts: &ProbeOpts) -> Report {
         structure,
         harmony,
     }
+}
+
+/// Detect spectral-flux onsets over the complete PCM buffer.
+pub fn detect_onsets(audio: &Audio) -> OnsetsReport {
+    let mono = audio.mono();
+    let stft = stft::Stft::compute(&mono, audio.sample_rate, onsets::FFT_SIZE, onsets::HOP);
+    onsets::analyze_stft(&stft)
 }
 
 /// Tempo *and* rhythm over one shared analysis pass: one onsets-grade

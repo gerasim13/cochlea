@@ -3,7 +3,8 @@
 use crate::audio::Audio;
 use crate::report::ClippingReport;
 
-pub(crate) fn analyze(audio: &Audio, true_peak_dbtp: Option<f64>) -> ClippingReport {
+/// Count full-scale samples using the supplied true-peak measurement.
+pub fn analyze(audio: &Audio, true_peak_dbtp: Option<f64>) -> ClippingReport {
     let clipped_samples = audio.samples.iter().filter(|&&x| x.abs() >= 1.0).count();
     let true_peak_over_0dbtp = true_peak_dbtp.is_some_and(|db| db > 0.0);
     ClippingReport {

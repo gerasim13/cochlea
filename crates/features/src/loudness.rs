@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::audio::Audio;
 use crate::report::LoudnessReport;
 
-pub(crate) fn analyze(audio: &Audio) -> LoudnessReport {
+/// Measure EBU R128 loudness and peaks over the complete PCM buffer.
+pub fn analyze(audio: &Audio) -> LoudnessReport {
     if audio.channels == 0 || audio.samples.is_empty() {
         return LoudnessReport::default();
     }
